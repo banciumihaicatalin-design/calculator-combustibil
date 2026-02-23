@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="ro">
 <head>
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#007bff">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Calculator Combustibil</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#007bff">
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; max-width: 400px; margin: 0 auto; background-color: #f4f4f9; }
     .container { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -16,37 +16,31 @@
     .eroare { color: red; font-size: 14px; margin-top: 10px; }
   </style>
 </head>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js')
-        .then(() => console.log('Service Worker înregistrat.'))
-        .catch((eroare) => console.log('Eroare la înregistrare:', eroare));
-    });
-  }
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').then((inregistrare) => {
-        
-        // Detectează o actualizare
-        inregistrare.addEventListener('updatefound', () => {
-          const nouWorker = inregistrare.installing;
-          nouWorker.addEventListener('statechange', () => {
-            if (nouWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // Notifică utilizatorul
-              if (confirm('A apărut o versiune nouă a aplicației. Reîncărcăm pagina pentru actualizare?')) {
-                window.location.reload();
-              }
-            }
-          });
-        });
-        
+<body>
+  <div class="container">
+    <h2>Calculator Combustibil</h2>
+    
+    <label for="distanta">Distanța parcursă (km):</label>
+    <input type="number" id="distanta" placeholder="ex: 150" step="any">
+
+    <label for="consum">Consum mediu (litri/100km):</label>
+    <input type="number" id="consum" placeholder="ex: 6.5" step="any">
+
+    <label for="pret">Preț combustibil (lei/litru):</label>
+    <input type="number" id="pret" placeholder="ex: 7.20" step="any">
+
+    <button onclick="calculeaza()">Calculează</button>
+
+    <div id="rezultat"></div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js');
       });
-    });
-  }
-</script>
+    }
+  </script>
 </body>
-
 </html>
-
