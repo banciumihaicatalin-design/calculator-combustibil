@@ -1,9 +1,9 @@
-const CACHE_NAME = 'motorina-v1';
+const CACHE_NAME = 'combustibil-v1';
 const resurse = [
-  '/calculator-motorina/',
-  '/calculator-motorina/index.html',
-  '/calculator-motorina/app.js',
-  '/calculator-motorina/manifest.json'
+  '/calculator-combustibil/',
+  '/calculator-combustibil/index.html',
+  '/calculator-combustibil/app.js',
+  '/calculator-combustibil/manifest.json'
 ];
 
 self.addEventListener('install', (eveniment) => {
@@ -17,7 +17,6 @@ self.addEventListener('install', (eveniment) => {
 self.addEventListener('fetch', (eveniment) => {
   eveniment.respondWith(
     caches.match(eveniment.request).then((raspuns) => {
-      // Returnează fișierul salvat local sau îl descarcă de pe internet
       return raspuns || fetch(eveniment.request);
     })
   );
