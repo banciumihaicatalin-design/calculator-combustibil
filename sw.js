@@ -1,4 +1,4 @@
-const CACHE_NAME = 'combustibil-v3';
+const CACHE_NAME = 'combustibil-v4';
 const resurse = [
   '/calculator-combustibil/',
   '/calculator-combustibil/index.html',
@@ -36,3 +36,4 @@ self.addEventListener('fetch', (eveniment) => {
     })
   );
 });
+
