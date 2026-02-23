@@ -1,7 +1,7 @@
 {
   "name": "Calculator Combustibil",
   "short_name": "Combustibil",
-  "start_url": "/calculator-motorina/",
+  "start_url": "/calculator-combustibil/",
   "display": "standalone",
   "background_color": "#f4f4f9",
   "theme_color": "#007bff",
@@ -19,3 +19,4 @@
   ]
 
 }
+
