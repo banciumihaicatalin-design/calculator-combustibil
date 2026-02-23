@@ -1,4 +1,4 @@
-const CACHE_NAME = 'combustibil-v2'; // Modifici versiunea aici (v3, v4) la fiecare actualizare
+const CACHE_NAME = 'combustibil-v3';
 const resurse = [
   '/calculator-combustibil/',
   '/calculator-combustibil/index.html',
@@ -7,7 +7,7 @@ const resurse = [
 ];
 
 self.addEventListener('install', (eveniment) => {
-  self.skipWaiting(); // Forțează instalarea imediată
+  self.skipWaiting();
   eveniment.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(resurse);
@@ -21,7 +21,7 @@ self.addEventListener('activate', (eveniment) => {
       return Promise.all(
         numeCacheUri.map((nume) => {
           if (nume !== CACHE_NAME) {
-            return caches.delete(nume); // Șterge versiunile vechi
+            return caches.delete(nume);
           }
         })
       );
