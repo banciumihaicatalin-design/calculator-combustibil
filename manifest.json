@@ -1,6 +1,6 @@
 {
-  "name": "Calculator Motorină",
-  "short_name": "Motorină",
+  "name": "Calculator Combustibil",
+  "short_name": "Combustibil",
   "start_url": "/calculator-motorina/",
   "display": "standalone",
   "background_color": "#f4f4f9",
@@ -17,4 +17,5 @@
       "type": "image/png"
     }
   ]
+
 }
