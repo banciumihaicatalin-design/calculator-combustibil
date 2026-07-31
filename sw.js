@@ -1,8 +1,9 @@
-const CACHE_NAME = 'combustibil-v13';
+const CACHE_NAME = 'combustibil-v14';
 const resurse = [
   '/fuel-calculator/',
   '/fuel-calculator/index.html',
   '/fuel-calculator/app.js',
+  '/fuel-calculator/core.js',
   '/fuel-calculator/style.css',
   '/fuel-calculator/manifest.json',
   '/fuel-calculator/favicon.svg',

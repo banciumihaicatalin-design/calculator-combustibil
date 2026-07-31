@@ -60,8 +60,9 @@ def load_current_prices():
         with open(PRICES_FILE) as f:
             return json.load(f)
     except Exception:
+        # Mirrors FUEL_DEFAULTS_RON in app.js (last known good prices)
         return {
-            "prices": {"B95": 9.43, "B98": 10.08, "Diesel": 9.53, "GPL": 4.41}
+            "prices": {"B95": 8.61, "B98": 9.26, "Diesel": 9.24, "GPL": 4.53}
         }
 
 
@@ -189,6 +190,7 @@ def main():
     print("Fetching Romanian fuel prices …\n")
     current = load_current_prices()
     prices  = dict(current.get("prices", {}))
+    changed = False  # True only if at least one price was actually refreshed
 
     # 1) Primary source: peco-online.ro (daily, real station prices)
     peco = fetch_peco_prices() or {}
@@ -201,11 +203,15 @@ def main():
     used_gpp = False
     for fuel in ("B95", "Diesel", "GPL"):
         if fuel in peco:
+            if prices.get(fuel) != peco[fuel]:
+                changed = True
             prices[fuel] = peco[fuel]
             continue
         price = fetch_gpp_price(fuel)
         if price:
             print(f"  ✓  {fuel}: {price:.2f} RON/L  (fallback: globalpetrolprices.com)")
+            if prices.get(fuel) != price:
+                changed = True
             prices[fuel] = price
             used_gpp = True
         else:
@@ -213,7 +219,10 @@ def main():
 
     # 98 is computed from 95 (not published separately by either source)
     if "B95" in prices:
-        prices["B98"] = round(prices["B95"] + B98_PREMIUM, 2)
+        b98 = round(prices["B95"] + B98_PREMIUM, 2)
+        if prices.get("B98") != b98:
+            changed = True
+        prices["B98"] = b98
         print(f"  ✓  B98: {prices['B98']:.2f} RON/L  (B95 + {B98_PREMIUM})")
 
     # Source label
@@ -224,10 +233,21 @@ def main():
     elif used_gpp:
         source = "globalpetrolprices.com"
     else:
-        source = "manual"
+        source = current.get("source", "manual")
+
+    # If no source returned anything fresh, keep the previous 'updated'
+    # timestamp so the app's freshness badge never claims new data that
+    # isn't there. The workflow then skips the commit entirely.
+    if changed:
+        updated_ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    else:
+        updated_ts = current.get("updated")
+        if not updated_ts:
+            updated_ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        print("  ⚠  No fresh prices fetched — keeping last 'updated' timestamp.")
 
     result = {
-        "updated":  datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "updated":  updated_ts,
         "source":   source,
         "currency": "RON",
         "prices":   prices,
@@ -237,9 +257,11 @@ def main():
         json.dump(result, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
-    print(f"\n{'✅' if source != 'manual' else '⚠ '} fuel-prices.json updated")
+    status = "✅" if changed else "⚠ "
+    print(f"\n{status} fuel-prices.json written")
     print(f"   updated : {result['updated']}")
     print(f"   source  : {result['source']}")
+    print(f"   changed : {changed}")
     print(f"   prices  : {json.dumps(prices)}")
 
 

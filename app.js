@@ -151,13 +151,32 @@ const TRADUCERI = {
   }
 };
 
+// ── Storage (localStorage may be unavailable: private mode, blocked cookies) ─
+// All reads/writes go through these helpers so a blocked storage never crashes
+// the app — it degrades to session-only behaviour instead.
+
+function storageGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ }
+}
+
+function storageRemove(key) {
+  try { localStorage.removeItem(key); } catch (e) { /* storage unavailable */ }
+}
+
 // ── State ───────────────────────────────────────────────────────────────────
 
-let limbaActiva  = localStorage.getItem('comb_limba')      || 'en';
-let consumUnit   = localStorage.getItem('comb_consumUnit') || 'L100';
-let currency     = localStorage.getItem('comb_currency')   || 'RON';
+let limbaActiva  = storageGet('comb_limba')      || 'en';
+let consumUnit   = storageGet('comb_consumUnit') || 'L100';
+let currency     = storageGet('comb_currency')   || 'RON';
 let lastResult   = null;
 let profilesCache = [];
+
+// parseNum / toL100 / CONSUM_LABEL / CONSUM_PLACEHOLDER / FuelCore
+// are provided by core.js (loaded before app.js).
 
 // ── Firebase ─────────────────────────────────────────────────────────────────
 
@@ -174,10 +193,10 @@ function generateSyncId() {
 }
 
 function getSyncId() {
-  let id = localStorage.getItem('comb_syncId');
+  let id = storageGet('comb_syncId');
   if (!id || id.length !== 6) {
     id = generateSyncId();
-    localStorage.setItem('comb_syncId', id);
+    storageSet('comb_syncId', id);
   }
   return id;
 }
@@ -242,7 +261,7 @@ function subscribeToProfiles(id) {
         const data = snap.data();
         profilesCache = Array.isArray(data?.profiles) ? data.profiles : [];
         // also keep localStorage in sync as offline fallback
-        localStorage.setItem('comb_profiles', JSON.stringify(profilesCache));
+        storageSet('comb_profiles', JSON.stringify(profilesCache));
         renderProfiles();
         setSyncStatusBar('connected');
       },
@@ -279,7 +298,7 @@ function setSyncStatusBar(state) {
 // ── Profile storage helpers ──────────────────────────────────────────────────
 
 function localGetProfiles() {
-  try { return JSON.parse(localStorage.getItem('comb_profiles') || '[]'); } catch { return []; }
+  try { return JSON.parse(storageGet('comb_profiles') || '[]'); } catch { return []; }
 }
 
 function getProfiles() {
@@ -288,7 +307,7 @@ function getProfiles() {
 
 function saveProfiles(profiles) {
   profilesCache = profiles;
-  localStorage.setItem('comb_profiles', JSON.stringify(profiles));
+  storageSet('comb_profiles', JSON.stringify(profiles));
   if (db && syncId) {
     db.collection('users').doc(syncId)
       .set({ profiles }, { merge: true })
@@ -328,7 +347,7 @@ function applySyncCode() {
     return;
   }
   syncId = raw;
-  localStorage.setItem('comb_syncId', syncId);
+  storageSet('comb_syncId', syncId);
   document.getElementById('sync-code-display').textContent = syncId;
   document.getElementById('sync-code-input').value = '';
   fb.textContent = tr.syncOk;
@@ -398,8 +417,14 @@ function renderInstallSteps() {
   const steps = platform === 'ios'     ? tr.installIOS
               : platform === 'android' ? tr.installAndroid
               :                          tr.installDesktop;
-  document.getElementById('install-steps').innerHTML =
-    steps.map(s => `<li>${esc(s)}</li>`).join('');
+  // Build nodes with textContent — no HTML injection surface.
+  const list = document.getElementById('install-steps');
+  list.innerHTML = '';
+  steps.forEach(s => {
+    const li = document.createElement('li');
+    li.textContent = s;
+    list.appendChild(li);
+  });
 }
 
 function openInstallModal() {
@@ -433,7 +458,7 @@ function updateThemeColorMeta() {
 function toggleTheme() {
   const next = currentTheme() === 'light' ? 'dark' : 'light';
   document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('comb_theme', next);
+  storageSet('comb_theme', next);
   updateThemeColorMeta();
 }
 
@@ -444,42 +469,26 @@ const fmt1 = new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 1, maximumF
 
 function t() { return TRADUCERI[limbaActiva]; }
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// ── Unit conversion ──────────────────────────────────────────────────────────
-
-function toL100(val, unit) {
-  if (unit === 'kmL') return 100 / val;
-  if (unit === 'mpg') return 235.214 / val;
-  return val;
-}
-
-const CONSUM_PLACEHOLDER = { L100: '6.5', kmL: '15.4', mpg: '36' };
-const CONSUM_LABEL       = { L100: 'L/100', kmL: 'km/L', mpg: 'mpg' };
-
 // ── Fuel prices ───────────────────────────────────────────────────────────────
 
-// Default fallback prices for Romania (RON/L) — updated May 2026
-const FUEL_DEFAULTS_RON = { B95: 9.43, B98: 10.08, Diesel: 9.53, GPL: 4.41 };
+// Default fallback prices for Romania (RON/L) — mirrors fuel-prices.json as a
+// last-resort when the network fetch fails.
+const FUEL_DEFAULTS_RON = { B95: 8.61, B98: 9.26, Diesel: 9.24, GPL: 4.53 };
 const FUEL_CACHE_KEY    = 'comb_fuelPrices';
 const FUEL_CACHE_TTL    = 12 * 60 * 60 * 1000; // 12 hours — daily updates
 
-let selectedFuelType = localStorage.getItem('comb_fuelType') || '';
+let selectedFuelType = storageGet('comb_fuelType') || '';
 
 // ── Fuel price functions ──────────────────────────────────────────────────────
 
 // Prices are served from the repo's fuel-prices.json via GitHub raw CDN.
 // A GitHub Actions workflow (/.github/workflows/update-fuel-prices.yml)
-// updates the file automatically every Monday — no API key needed.
+// updates the file automatically every day at 05:00 UTC — no API key needed.
 const FUEL_PRICES_URL =
   'https://raw.githubusercontent.com/mrmcb92/fuel-calculator/main/fuel-prices.json';
 
 function loadFuelPriceCache() {
-  try { return JSON.parse(localStorage.getItem(FUEL_CACHE_KEY) || 'null'); } catch { return null; }
+  try { return JSON.parse(storageGet(FUEL_CACHE_KEY) || 'null'); } catch { return null; }
 }
 
 async function fetchFuelPrices() {
@@ -501,7 +510,7 @@ async function fetchFuelPrices() {
       updatedAt:  data.updated || null,
       source:     'live',
     };
-    localStorage.setItem(FUEL_CACHE_KEY, JSON.stringify(cache));
+    storageSet(FUEL_CACHE_KEY, JSON.stringify(cache));
     return cache;
   } catch (e) {
     console.warn('Fuel price fetch failed:', e);
@@ -514,19 +523,31 @@ function getCurrentFuelPrices() {
   return cache?.prices || FUEL_DEFAULTS_RON;
 }
 
+// Recompute the freshness badge based on the cache, the selected fuel type and
+// the active currency. Used on init, language/currency switches and refreshes.
+function refreshFreshnessBadge() {
+  if (currency !== 'RON' && selectedFuelType) {
+    updatePriceFreshness(null, 'ron-only');
+    return;
+  }
+  const cache = loadFuelPriceCache();
+  if (cache && cache.source === 'live') {
+    updatePriceFreshness(cache.updatedAt || cache.timestamp, 'live');
+  } else {
+    updatePriceFreshness(null, 'default');
+  }
+}
+
 async function initFuelPrices() {
   const cache = loadFuelPriceCache();
   const now   = Date.now();
 
   if (cache && (now - cache.timestamp) < FUEL_CACHE_TTL) {
-    updatePriceFreshness(cache.updatedAt || cache.timestamp, 'live');
+    refreshFreshnessBadge();
   } else {
     updatePriceFreshness(null, 'loading');
     const fresh = await fetchFuelPrices();
-    updatePriceFreshness(
-      fresh ? (fresh.updatedAt || fresh.timestamp) : null,
-      fresh ? 'live' : 'default'
-    );
+    refreshFreshnessBadge();
   }
 
   if (selectedFuelType) {
@@ -536,21 +557,20 @@ async function initFuelPrices() {
 }
 
 async function refreshFuelPrices() {
-  localStorage.removeItem(FUEL_CACHE_KEY);
+  storageRemove(FUEL_CACHE_KEY);
   updatePriceFreshness(null, 'loading');
   const fresh = await fetchFuelPrices();
-  updatePriceFreshness(
-    fresh ? (fresh.updatedAt || fresh.timestamp) : null,
-    fresh ? 'live' : 'default'
-  );
+  refreshFreshnessBadge();
   if (selectedFuelType) applyFuelTypePrice(selectedFuelType, true);
   showToast(fresh ? t().priceLive + ' ✓' : t().priceDefault);
 }
 
 function selectFuelType(type) {
   selectedFuelType = type;
-  localStorage.setItem('comb_fuelType', type);
+  storageSet('comb_fuelType', type);
   updateFuelTypeButtons();
+  // Reflect "RON only" notice when a type is picked under a non-RON currency.
+  refreshFreshnessBadge();
   applyFuelTypePrice(type, true);
 }
 
@@ -615,7 +635,6 @@ function updatePriceFreshness(timestamp, state) {
   }
 }
 
-
 // ── Language ─────────────────────────────────────────────────────────────────
 
 function aplicaLimba() {
@@ -663,20 +682,14 @@ function aplicaLimba() {
   document.getElementById('btn-limba').textContent = limbaActiva === 'en' ? 'RO' : 'EN';
   document.documentElement.lang = limbaActiva;
   updateCurrencyLabels();
-  // Re-render price freshness with updated language
-  const cache = loadFuelPriceCache();
-  if (cache && cache.source === 'live') {
-    updatePriceFreshness(cache.updatedAt || cache.timestamp, 'live');
-  } else {
-    updatePriceFreshness(null, currency !== 'RON' && selectedFuelType ? 'ron-only' : 'default');
-  }
+  refreshFreshnessBadge();
   if (lastResult) afiseazaRezultat(lastResult);
   renderHistory();
 }
 
 function schimbaLimba() {
   limbaActiva = limbaActiva === 'en' ? 'ro' : 'en';
-  localStorage.setItem('comb_limba', limbaActiva);
+  storageSet('comb_limba', limbaActiva);
   aplicaLimba();
 }
 
@@ -684,17 +697,18 @@ function schimbaLimba() {
 
 function setCurrency(cur) {
   currency = cur;
-  localStorage.setItem('comb_currency', cur);
+  storageSet('comb_currency', cur);
   document.querySelectorAll('#currency-toggle .seg').forEach(b => {
     b.classList.toggle('active', b.dataset.cur === cur);
   });
   updateCurrencyLabels();
-  // When switching back to RON and a fuel type is selected, auto-fill price
+  // When switching back to RON and a fuel type is selected, auto-fill price.
+  // Either way the freshness badge is re-evaluated so it never gets stuck
+  // on the "RON only" notice after returning to RON.
   if (cur === 'RON' && selectedFuelType) {
     applyFuelTypePrice(selectedFuelType, true);
-  } else if (cur !== 'RON' && selectedFuelType) {
-    updatePriceFreshness(null, 'ron-only');
   }
+  refreshFreshnessBadge();
   if (lastResult) afiseazaRezultat(lastResult);
 }
 
@@ -708,7 +722,7 @@ function updateCurrencyLabels() {
 
 function setConsumUnit(unit) {
   consumUnit = unit;
-  localStorage.setItem('comb_consumUnit', unit);
+  storageSet('comb_consumUnit', unit);
   document.querySelectorAll('#consum-unit-toggle .seg').forEach(b => {
     b.classList.toggle('active', b.dataset.unit === unit);
   });
@@ -727,7 +741,7 @@ function setTab(tab) {
   if (tab === 'range') {
     const c  = document.getElementById('consum').value;
     const p  = document.getElementById('pret').value;
-    const cu = parseFloat(c);
+    const cu = parseNum(c);
     if (!isNaN(cu) && cu > 0) {
       document.getElementById('consum-r').value = String(toL100(cu, consumUnit)).replace(',', '.');
     }
@@ -758,64 +772,90 @@ function valideaza(distanta, consumL100, pret) {
   return null;
 }
 
+function valideazaRange(buget, consumL100, pret) {
+  const tr = t();
+  if (isNaN(buget) || buget < 0.1 || buget > 1000000)
+    return tr.eroareInterval(tr.buget, 0.1, 1000000);
+  if (isNaN(consumL100) || consumL100 <= 0)
+    return tr.eroareNaN(tr.consumR);
+  if (isNaN(pret) || pret < 0.1 || pret > 1000)
+    return tr.eroareInterval(tr.pretR, 0.1, 1000);
+  return null;
+}
+
 // ── Cost calculation ──────────────────────────────────────────────────────────
 
 function getDistantaEffectiva() {
-  const d = parseFloat(document.getElementById('distanta').value);
+  const d = parseNum(document.getElementById('distanta').value);
   return document.getElementById('tur-retur').checked ? d * 2 : d;
 }
 
-function recalculeaza() {
+// Shared by both the live recalculation and the Calculate button.
+function computeCostResult() {
   const distanta   = getDistantaEffectiva();
-  const consumRaw  = parseFloat(document.getElementById('consum').value);
+  const consumRaw  = parseNum(document.getElementById('consum').value);
   const consumL100 = toL100(consumRaw, consumUnit);
-  const pret       = parseFloat(document.getElementById('pret').value);
+  const pret       = parseNum(document.getElementById('pret').value);
 
-  if (isNaN(distanta) || isNaN(consumRaw) || isNaN(pret)) return;
-  if (valideaza(distanta, consumL100, pret)) return;
+  // All fields empty / untouched — stay quiet so the app doesn't scream on load.
+  if (isNaN(distanta) || isNaN(consumRaw) || isNaN(pret)) return null;
 
-  const litri     = (distanta / 100) * consumL100;
-  const cost      = litri * pret;
-  const costPerKm = cost / distanta;
+  const eroare = valideaza(distanta, consumL100, pret);
+  if (eroare) return { eroare };
+
+  const core      = FuelCore.computeCore(distanta, consumL100, pret);
   const splitOn   = document.getElementById('split-toggle').checked;
   const pasageri  = splitOn ? (parseInt(document.getElementById('pasageri').value) || 1) : 1;
 
-  lastResult = { litri, cost, costPerKm, pasageri, distanta, consumL100, pret };
-  afiseazaRezultat(lastResult);
+  return {
+    litri:     core.litri,
+    cost:      core.cost,
+    costPerKm: core.costPerKm,
+    pasageri,
+    distanta,
+    consumL100,
+    pret,
+  };
+}
+
+function recalculeaza() {
+  const res = computeCostResult();
+  if (!res) return;
+  if (res.eroare) {
+    afiseazaEroare(res.eroare);
+    return;
+  }
+  lastResult = res;
+  afiseazaRezultat(res);
 }
 
 function calculeaza() {
-  const distanta   = getDistantaEffectiva();
-  const consumRaw  = parseFloat(document.getElementById('consum').value);
-  const consumL100 = toL100(consumRaw, consumUnit);
-  const pret       = parseFloat(document.getElementById('pret').value);
-  const btn        = document.getElementById('btn-calculeaza');
-  const lbl        = document.getElementById('label-btn-calc');
-  const tr         = t();
+  const btn = document.getElementById('btn-calculeaza');
+  const lbl = document.getElementById('label-btn-calc');
+  const tr  = t();
 
   btn.disabled    = true;
   lbl.textContent = tr.butonLoading;
 
-  const eroare = valideaza(distanta, consumL100, pret);
-  if (eroare) {
-    afiseazaEroare(eroare);
+  const res = computeCostResult();
+  if (!res) {
+    btn.disabled    = false;
+    lbl.textContent = tr.butonCalc;
+    return;
+  }
+  if (res.eroare) {
+    afiseazaEroare(res.eroare);
     btn.disabled    = false;
     lbl.textContent = tr.butonCalc;
     return;
   }
 
-  const litri     = (distanta / 100) * consumL100;
-  const cost      = litri * pret;
-  const costPerKm = cost / distanta;
-  const splitOn   = document.getElementById('split-toggle').checked;
-  const pasageri  = splitOn ? (parseInt(document.getElementById('pasageri').value) || 1) : 1;
-
-  lastResult = { litri, cost, costPerKm, pasageri, distanta, consumL100, pret };
-  localStorage.setItem('comb_distanta', document.getElementById('distanta').value);
-  localStorage.setItem('comb_consum',   document.getElementById('consum').value);
-  localStorage.setItem('comb_pret',     pret);
-  addToHistory(lastResult);
-  afiseazaRezultat(lastResult);
+  lastResult = res;
+  storageSet('comb_distanta', document.getElementById('distanta').value);
+  storageSet('comb_consum',   document.getElementById('consum').value);
+  storageSet('comb_pret',     res.pret);
+  addToHistory(res);
+  afiseazaRezultat(res);
 
   btn.disabled    = false;
   lbl.textContent = tr.butonCalc;
@@ -871,33 +911,48 @@ function afiseazaRezultat(res) {
 // ── Range calculation ─────────────────────────────────────────────────────────
 
 function calcRange() {
-  const buget     = parseFloat(document.getElementById('buget').value);
-  const consumL100 = parseFloat(document.getElementById('consum-r').value);
-  const pret      = parseFloat(document.getElementById('pret-r').value);
+  const buget     = parseNum(document.getElementById('buget').value);
+  const consumL100 = parseNum(document.getElementById('consum-r').value);
+  const pret      = parseNum(document.getElementById('pret-r').value);
   const wrap      = document.getElementById('range-result-wrap');
   const rez       = document.getElementById('range-rezultat');
-  const tr        = t();
 
-  if (isNaN(buget) || isNaN(consumL100) || isNaN(pret) || consumL100 <= 0 || pret <= 0 || buget <= 0) return;
+  if (isNaN(buget) || isNaN(consumL100) || isNaN(pret)) return;
+
+  const eroare = valideazaRange(buget, consumL100, pret);
+  if (eroare) {
+    afiseazaEroareRange(eroare);
+    return;
+  }
 
   const litri = buget / pret;
   const dist  = (litri / consumL100) * 100;
 
   wrap.style.display = 'block';
+  rez.className = '';
   rez.innerHTML = `
     <div class="result-grid cols-2">
       <div class="result-card" data-copy="${fmt.format(dist)}">
-        <div class="r-label">${tr.labelMaxDist}</div>
+        <div class="r-label">${t().labelMaxDist}</div>
         <div class="r-value">${fmt.format(dist)}</div>
-        <div class="r-unit">${tr.unitKm}</div>
+        <div class="r-unit">${t().unitKm}</div>
       </div>
       <div class="result-card" data-copy="${fmt1.format(litri)}">
-        <div class="r-label">${tr.labelLitriR}</div>
+        <div class="r-label">${t().labelLitriR}</div>
         <div class="r-value">${fmt1.format(litri)}</div>
-        <div class="r-unit">${tr.unitLitri}</div>
+        <div class="r-unit">${t().unitLitri}</div>
       </div>
     </div>
   `;
+}
+
+function afiseazaEroareRange(msg) {
+  const wrap = document.getElementById('range-result-wrap');
+  const rez  = document.getElementById('range-rezultat');
+  wrap.style.display = 'block';
+  rez.className = 'eroare';
+  rez.innerHTML = '';
+  rez.textContent = msg;
 }
 
 // ── Copy to clipboard ─────────────────────────────────────────────────────────
@@ -946,7 +1001,7 @@ function showToast(msg) {
 // ── History ───────────────────────────────────────────────────────────────────
 
 function getHistory() {
-  try { return JSON.parse(localStorage.getItem('comb_history') || '[]'); } catch { return []; }
+  try { return JSON.parse(storageGet('comb_history') || '[]'); } catch { return []; }
 }
 
 function addToHistory(res) {
@@ -961,11 +1016,11 @@ function addToHistory(res) {
     currency,
   });
   if (hist.length > 10) hist.pop();
-  localStorage.setItem('comb_history', JSON.stringify(hist));
+  storageSet('comb_history', JSON.stringify(hist));
 }
 
 function clearHistory() {
-  localStorage.removeItem('comb_history');
+  storageRemove('comb_history');
   renderHistory();
 }
 
@@ -1011,8 +1066,17 @@ function renderProfiles() {
   const tr       = t();
   const profiles = getProfiles();
   const current  = sel.value;
-  sel.innerHTML  = `<option value="">${esc(tr.profileDefault)}</option>` +
-    profiles.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+
+  // Build <option> nodes with textContent — no HTML injection surface.
+  sel.innerHTML = '';
+  const opts = [{ value: '', label: tr.profileDefault }];
+  profiles.forEach(p => opts.push({ value: p.id, label: p.name }));
+  opts.forEach(o => {
+    const option = document.createElement('option');
+    option.value = o.value;
+    option.textContent = o.label;
+    sel.appendChild(option);
+  });
   if (current) sel.value = current;
 }
 
@@ -1023,7 +1087,7 @@ function saveProfile() {
   const name = prompt(tr.profileName);
   if (!name || !name.trim()) return;
   const profiles = getProfiles();
-  profiles.push({ id: Date.now().toString(), name: name.trim(), consum: parseFloat(consumVal), unit: consumUnit });
+  profiles.push({ id: Date.now().toString(), name: name.trim(), consum: parseNum(consumVal), unit: consumUnit });
   saveProfiles(profiles);
   renderProfiles();
   showToast(tr.profileSaved);
@@ -1058,6 +1122,11 @@ function resetForm() {
   document.getElementById('profile-select').value = '';
   document.getElementById('rezultat-wrap').style.display = 'none';
   document.getElementById('share-row').style.display     = 'none';
+  // Range tab fields + results are cleared too so stale values don't linger.
+  ['buget', 'consum-r', 'pret-r'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('range-result-wrap').style.display = 'none';
+  document.getElementById('range-rezultat').className = '';
+  document.getElementById('range-rezultat').textContent = '';
   lastResult = null;
   // Re-apply fuel type price if one is selected, otherwise clear price
   if (selectedFuelType && currency === 'RON') {
@@ -1070,9 +1139,9 @@ function resetForm() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 function incarca() {
-  const d = localStorage.getItem('comb_distanta');
-  const c = localStorage.getItem('comb_consum');
-  const p = localStorage.getItem('comb_pret');
+  const d = storageGet('comb_distanta');
+  const c = storageGet('comb_consum');
+  const p = storageGet('comb_pret');
   if (d) document.getElementById('distanta').value = d;
   if (c) document.getElementById('consum').value   = c;
   if (p) document.getElementById('pret').value     = p;
@@ -1095,8 +1164,17 @@ function incarca() {
   updateThemeColorMeta();
   recalculeaza();
 
+  // Enter submits from any input: cost inputs run the cost calc, range inputs
+  // run the range calc — no more calculating the wrong tab on Enter.
   document.querySelectorAll('input[type=number]').forEach(inp => {
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') calculeaza(); });
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      if (inp.closest('#panel-range')) {
+        calcRange();
+      } else {
+        calculeaza();
+      }
+    });
   });
 }
 
