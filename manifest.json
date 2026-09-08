@@ -1,7 +1,8 @@
 {
   "name": "Fuel Calculator",
   "short_name": "Fuel Calc",
-  "start_url": "/fuel-calculator/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0a141e",
   "theme_color": "#0a141e",

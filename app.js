@@ -473,7 +473,7 @@ function t() { return TRADUCERI[limbaActiva]; }
 
 // Default fallback prices for Romania (RON/L) — mirrors fuel-prices.json as a
 // last-resort when the network fetch fails.
-const FUEL_DEFAULTS_RON = { B95: 8.61, B98: 9.26, Diesel: 9.24, GPL: 4.53 };
+const FUEL_DEFAULTS_RON = { B95: 9.72, B98: 10.37, Diesel: 10.18, GPL: 4.64 };
 const FUEL_CACHE_KEY    = 'comb_fuelPrices';
 const FUEL_CACHE_TTL    = 12 * 60 * 60 * 1000; // 12 hours — daily updates
 
@@ -808,7 +808,8 @@ function computeCostResult() {
 
   const core      = FuelCore.computeCore(distanta, consumL100, pret);
   const splitOn   = document.getElementById('split-toggle').checked;
-  const pasageri  = splitOn ? (parseInt(document.getElementById('pasageri').value) || 1) : 1;
+  const rawPax    = parseInt(document.getElementById('pasageri')?.value, 10);
+  const pasageri  = splitOn ? Math.max(1, isNaN(rawPax) ? 1 : rawPax) : 1;
 
   return {
     litri:     core.litri,

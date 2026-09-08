@@ -85,6 +85,20 @@ test('computeCore: zero distance divides safely (costPerKm = Infinity)', () => {
   assert.ok(typeof r.costPerKm === 'number');
 });
 
+test('parseNum: handles negative number strings correctly', () => {
+  assert.strictEqual(parseNum('-5'), -5);
+  assert.strictEqual(parseNum(' -3,14 '), -3.14);
+});
+
+test('computeCore: handles decimal precision for liters and cost accurately', () => {
+  const r = computeCore(85.5, 5.2, 9.72);
+  const expectedLiters = (85.5 / 100) * 5.2;
+  const expectedCost = expectedLiters * 9.72;
+  assert.ok(Math.abs(r.litri - expectedLiters) < 1e-9);
+  assert.ok(Math.abs(r.cost - expectedCost) < 1e-9);
+  assert.ok(Math.abs(r.costPerKm - (expectedCost / 85.5)) < 1e-9);
+});
+
 // ── Report ─────────────────────────────────────────────────────────────────
 
 console.log(`\n✓ ${passed} tests passed`);

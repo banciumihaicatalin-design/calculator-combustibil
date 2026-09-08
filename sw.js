@@ -1,24 +1,26 @@
-const CACHE_NAME = 'combustibil-v14';
+const CACHE_NAME = 'combustibil-v15';
 const resurse = [
-  '/fuel-calculator/',
-  '/fuel-calculator/index.html',
-  '/fuel-calculator/app.js',
-  '/fuel-calculator/core.js',
-  '/fuel-calculator/style.css',
-  '/fuel-calculator/manifest.json',
-  '/fuel-calculator/favicon.svg',
-  '/fuel-calculator/favicon-32.png',
-  '/fuel-calculator/favicon-16.png',
-  '/fuel-calculator/apple-touch-icon.png',
-  '/fuel-calculator/icon-nou-192.png',
-  '/fuel-calculator/icon-nou-512.png'
+  './',
+  'index.html',
+  'app.js',
+  'core.js',
+  'style.css',
+  'manifest.json',
+  'favicon.svg',
+  'favicon-32.png',
+  'favicon-16.png',
+  'apple-touch-icon.png',
+  'icon-nou-192.png',
+  'icon-nou-512.png',
+  'fuel-prices.json'
 ];
 
 self.addEventListener('install', (eveniment) => {
   self.skipWaiting();
   eveniment.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(resurse);
+      const urlsToCache = resurse.map(url => new URL(url, self.location.href).href);
+      return cache.addAll(urlsToCache);
     }).catch((err) => {
       console.error('[SW] Eroare la instalare, nu s-au putut cachea resursele:', err);
     })
@@ -41,6 +43,13 @@ self.addEventListener('activate', (eveniment) => {
 });
 
 self.addEventListener('fetch', (eveniment) => {
+  if (eveniment.request.method !== 'GET') return;
+  if (!eveniment.request.url.startsWith('http')) return;
+
+  // Don't intercept cross-origin requests (e.g. Firebase, external APIs)
+  const reqUrl = new URL(eveniment.request.url);
+  if (reqUrl.origin !== self.location.origin) return;
+
   eveniment.respondWith(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.match(eveniment.request).then((raspunsCache) => {
