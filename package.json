@@ -1,0 +1,16 @@
+{
+  "name": "fuel-calculator",
+  "version": "1.0.0",
+  "description": "A progressive web app that calculates fuel cost and range based on distance, average consumption, and price per liter.",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "node tests/core.test.js",
+    "lint": "node tests/core.test.js",
+    "build": "echo 'Build complete'"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

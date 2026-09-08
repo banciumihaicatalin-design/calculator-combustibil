@@ -493,7 +493,10 @@ function loadFuelPriceCache() {
 
 async function fetchFuelPrices() {
   try {
-    const res = await fetch(FUEL_PRICES_URL + '?t=' + Date.now());
+    let res = await fetch('./fuel-prices.json?t=' + Date.now());
+    if (!res.ok) {
+      res = await fetch(FUEL_PRICES_URL + '?t=' + Date.now());
+    }
     if (!res.ok) return null;
     const data = await res.json();
     if (!data.prices) return null;
